@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.0/firebase-app-compat.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.0/firebase-database-compat.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .chart-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .chart-box {
+            flex: 1 1 calc(50% - 20px);
+            min-width: 300px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+        }
+        .status {
+            padding: 10px;
+            background-color: #e9e9e9;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+        @media (max-width: 768px) {
+            .chart-box {
+                flex: 1 1 100%;
+            }
+        }
+        .current-values {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+        }
+        .value-card {
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            padding: 15px;
+            text-align: center;
+            flex: 1;
+            max-width: 200px;
+            margin: 0 10px;
+        }
+        .value-title {
+            font-size: 16px;
+            color: #555;
+            margin-bottom: 5px;
+        }
+        .value-number {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .temp-value {
+            color: #dc3545;
+        }
+        .humid-value {
+            color: #0d6efd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Temperature and Humidity Dashboard</h1>
+            <!-- <p>Real-time data visualization from your IoT sensor</p> -->
+        </div>
+
+        <div class="current-values">
+            <div class="value-card">
+                <div class="value-title">Temperature</div>
+                <div class="value-number temp-value" id="current-temp">--</div>
+                <div>°C</div>
+            </div>
+            <div class="value-card">
+                <div class="value-title">Humidity</div>
+                <div class="value-number humid-value" id="current-humid">--</div>
+                <div>%</div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <div class="chart-box">
+                <h2>Temperature Over Time</h2>
+                <canvas id="temperatureChart"></canvas>
+            </div>
+            <div class="chart-box">
+                <h2>Humidity Levels</h2>
+                <canvas id="humidityChart"></canvas>
+            </div>
+        </div>
+
+        <div class="status" id="connectionStatus">
+            Connecting to Firebase...
+        </div>
+    </div>
+
+    <script>
+        // Firebase configuration 
+        const firebaseConfig = {
+            apiKey: "AIzaSyBbXE08KPhFDHYlXrx32Xd7-2IclAvqYT0",
+            authDomain: "esptest1-cfd44.firebaseapp.com",
+            databaseURL: "https://esptest1-cfd44-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "esptest1-cfd44",
+            storageBucket: "esptest1-cfd44.firebasestorage.app",
+            messagingSenderId: "715674527262",
+            appId: "1:715674527262:web:2293ff094f0e8dc97c700f"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        const statusElement = document.getElementById('connectionStatus');
+        const currentTempElement = document.getElementById('current-temp');
+        const currentHumidElement = document.getElementById('current-humid');
+
+        // Initialize Chart.js charts
+        const temperatureCtx = document.getElementById('temperatureChart').getContext('2d');
+        const humidityCtx = document.getElementById('humidityChart').getContext('2d');
+
+        // Array to store historical data
+        const tempHistory = [];
+        const humidHistory = [];
+        const timeLabels = [];
+
+        // Maximum number of data points to display
+        const MAX_DATA_POINTS = 10;
+
+        const temperatureChart = new Chart(temperatureCtx, {
+            type: 'line',
+            data: {
+                labels: timeLabels,
+                datasets: [{
+                    label: 'Temperature (°C)',
+                    data: tempHistory,
+                    borderColor: 'rgb(255, 99, 132)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    borderWidth: 2,
+                    tension: 0.2
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        title: {
+                            display: true,
+                            text: 'Temperature (°C)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Time'
+                        }
+                    }
+                }
+            }
+        });
+
+        const humidityChart = new Chart(humidityCtx, {
+            type: 'bar',
+            data: {
+                labels: timeLabels,
+                datasets: [{
+                    label: 'Humidity (%)',
+                    data: humidHistory,
+                    backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                    borderColor: 'rgb(54, 162, 235)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'Humidity (%)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Time'
+                        }
+                    }
+                }
+            }
+        });
+
+        // Function to format timestamp
+        function formatTime() {
+            const date = new Date();
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+
+        // Reference to your sensor data in Firebase
+        const sensorRef = database.ref('Sensor');
+
+        // Listen for new data
+        sensorRef.on('value', (snapshot) => {
+            statusElement.textContent = 'Connected to Firebase. Receiving data...';
+            statusElement.style.backgroundColor = '#d4edda';
+            
+            const sensorData = snapshot.val();
+            
+            if (!sensorData) {
+                statusElement.textContent = 'No data available in the database.';
+                return;
+            }
+            
+            console.log('Received data:', sensorData);
+            
+            // Get the temperature and humidity values
+            const temp = sensorData.Temp;
+            const humid = sensorData.Humid;
+            
+            // Update current value displays
+            currentTempElement.textContent = temp;
+            currentHumidElement.textContent = humid;
+            
+            // Add to history arrays
+            const currentTime = formatTime();
+            tempHistory.push(temp);
+            humidHistory.push(humid);
+            timeLabels.push(currentTime);
+            
+            // Keep only the last MAX_DATA_POINTS data points
+            if (tempHistory.length > MAX_DATA_POINTS) {
+                tempHistory.shift();
+                humidHistory.shift();
+                timeLabels.shift();
+            }
+            
+            // Update charts
+            temperatureChart.update();
+            humidityChart.update();
+            
+            // Update status
+            statusElement.innerHTML = 
+                `Last update: ${new Date().toLocaleString()}<br>` +
+                `Temperature: ${temp}°C | Humidity: ${humid}%`;
+        }, (error) => {
+            statusElement.textContent = 'Error connecting to Firebase: ' + error.message;
+            statusElement.style.backgroundColor = '#f8d7da';
+            console.error('Firebase error:', error);
+        });
+
+        // Add connection status indicator
+        const connectedRef = database.ref('.info/connected');
+        connectedRef.on('value', (snap) => {
+            if (snap.val() === true) {
+                statusElement.innerHTML += '<br>Connection status: Connected';
+            } else {
+                statusElement.innerHTML += '<br>Connection status: Disconnected';
+            }
+        });
+    </script>
+</body>
+</html>
